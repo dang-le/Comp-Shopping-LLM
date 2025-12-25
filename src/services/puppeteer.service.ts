@@ -387,52 +387,236 @@ class PuppeteerService {
   }
 
   private async extractPrice(page: Page): Promise<string> {
-    let price = '';
+    // First, try to find price in structured data (JSON-LD, microdata)
+    try {
+      const structuredPrice = await page.evaluate(() => {
+        // Check for JSON-LD structured data
+        const scripts = (globalThis as any).document.querySelectorAll('script[type="application/ld+json"]');
+        for (const script of scripts) {
+          try {
+            const data = JSON.parse(script.textContent || '');
+            if (data.offers && data.offers.price) {
+              return data.offers.price.toString();
+            }
+            if (data.price) {
+              return data.price.toString();
+            }
+          } catch (e) {
+            // Continue
+          }
+        }
 
-    const priceSelectors = [
-      '.price',
-      '.product-price',
-      '[data-price]',
-      '.amount',
-      'span.price',
-      '[itemprop="price"]',
-      '.current-price',
-      '.final-price',
-      '.price-value',
+        // Check for microdata
+        const priceElement = (globalThis as any).document.querySelector('[itemprop="price"]');
+        if (priceElement) {
+          return priceElement.textContent?.trim() || '';
+        }
+
+        return null;
+      });
+
+      if (structuredPrice) {
+        const formattedPrice = structuredPrice.startsWith('$') ? structuredPrice : `$${structuredPrice}`;
+        console.log(`Found price in structured data: ${formattedPrice}`);
+        return formattedPrice;
+      }
+    } catch (e) {
+      // Continue with other methods
+    }
+
+    // Intelligent price extraction: analyze all visible elements
+    const priceCandidates = await page.evaluate(() => {
+      const elements = Array.from((globalThis as any).document.querySelectorAll('body *'));
+      const candidates: Array<{
+        text: string;
+        element: string;
+        context: string;
+        rect: { x: number; y: number; width: number; height: number };
+        isVisible: boolean;
+      }> = [];
+
+      for (const el of elements) {
+        const element = el as any;
+        const style = (globalThis as any).window.getComputedStyle(element);
+
+        // Only consider visible elements
+        const isVisible = style.display !== 'none' &&
+                         style.visibility !== 'hidden' &&
+                         element.offsetWidth > 0 &&
+                         element.offsetHeight > 0;
+
+        if (isVisible) {
+          const text = element.textContent?.trim();
+          if (text && text.length > 0 && text.length < 200) {
+            // Get element info
+            const tagName = element.tagName.toLowerCase();
+            const className = element.className || '';
+            const id = element.id || '';
+
+            // Get context (parent elements)
+            let context = '';
+            let parent = element.parentElement;
+            for (let i = 0; i < 3 && parent; i++) {
+              if (parent.textContent && parent.textContent.trim().length < 500) {
+                context += parent.textContent.trim() + ' ';
+              }
+              parent = parent.parentElement;
+            }
+
+            // Get position
+            const rect = element.getBoundingClientRect();
+
+            candidates.push({
+              text,
+              element: `${tagName}${id ? `#${id}` : ''}${className ? `.${className.split(' ').join('.')}` : ''}`,
+              context: context.toLowerCase(),
+              rect: {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height
+              },
+              isVisible
+            });
+          }
+        }
+      }
+
+      return candidates;
+    });
+
+    // Extract all potential prices from candidates
+    const allPrices: Array<{
+      price: string;
+      value: number;
+      candidate: typeof priceCandidates[0];
+      score: number;
+    }> = [];
+
+    const pricePatterns = [
+      /\$[\d,]+\.?\d{0,2}/g,  // $123.45, $1,234.56
+      /\b\d{1,3}(?:,\d{3})*\.\d{2}\b/g, // 123.45, 1,234.56 (without $)
     ];
 
-    for (const sel of priceSelectors) {
-      try {
-        const result = await page.evaluate((selector: string) => {
-          const el = (globalThis as any).document.querySelector(selector);
-          if (!el) return '';
-          const dataPrice = el.getAttribute?.('data-price');
-          if (dataPrice) return dataPrice;
-          return el?.textContent?.trim() || '';
-        }, sel);
-        if (result && /[\d,.$]/.test(result)) {
-          price = result.substring(0, 100);
-          console.log(`Found price: ${price}`);
-          return price;
+    for (const candidate of priceCandidates) {
+      for (const pattern of pricePatterns) {
+        const matches = candidate.text.match(pattern);
+        if (matches) {
+          for (const match of matches) {
+            const numericValue = parseFloat(match.replace(/[$,]/g, ''));
+            if (numericValue >= 0.01 && numericValue <= 1000000) { // Reasonable price range
+              allPrices.push({
+                price: match.startsWith('$') ? match : `$${match}`,
+                value: numericValue,
+                candidate,
+                score: 0 // Will be calculated below
+              });
+            }
+          }
         }
-      } catch (e) {
-        // Continue
       }
     }
 
-    // Fallback: search in text
-    if (!price) {
-      const allText = await page.evaluate(() => {
-        return (globalThis as any).document?.body?.innerText || '';
-      });
-      const priceMatch = allText.match(/\$[\d,]+\.?\d*|\d{1,3}(?:,\d{3})*(?:\.\d{2})?/);
-      if (priceMatch) {
-        price = priceMatch[0];
-        console.log(`Found price in text: ${price}`);
+    // Score each price candidate
+    for (const item of allPrices) {
+      let score = 0;
+      const context = item.candidate.context;
+      const element = item.candidate.element.toLowerCase();
+      const text = item.candidate.text.toLowerCase();
+
+      // High score for elements that explicitly mention price
+      if (element.includes('price') || context.includes('price')) {
+        score += 25;
       }
+
+      // High score for shopping/cart related context
+      if (context.includes('add to cart') || context.includes('buy now') ||
+          context.includes('purchase') || context.includes('checkout') ||
+          context.includes('cart') || context.includes('order')) {
+        score += 20;
+      }
+
+      // Medium score for cost/amount/total context
+      if (context.includes('cost') || context.includes('amount') ||
+          context.includes('total') || context.includes('subtotal')) {
+        score += 15;
+      }
+
+      // Medium score for sale/discount context
+      if (context.includes('sale') || context.includes('discount') ||
+          context.includes('special') || context.includes('offer') ||
+          context.includes('promo') || context.includes('deal')) {
+        score += 15;
+      }
+
+      // Element type scoring
+      if (element.startsWith('span') && (element.includes('price') || context.includes('price'))) {
+        score += 15;
+      }
+      if (element.startsWith('div') && (element.includes('price') || context.includes('price'))) {
+        score += 12;
+      }
+      if (element.includes('current') || element.includes('final')) {
+        score += 10;
+      }
+
+      // Position scoring (prices are often in upper portion of product pages)
+      if (item.candidate.rect.y < 1000) { // Top portion of page
+        score += 5;
+      }
+
+      // Size scoring (price elements are usually reasonably sized)
+      const area = item.candidate.rect.width * item.candidate.rect.height;
+      if (area > 10 && area < 10000) { // Not too small, not too large
+        score += 3;
+      }
+
+      // Penalize prices that appear in headers/footers
+      if (context.includes('header') || context.includes('footer') ||
+          context.includes('nav') || context.includes('menu')) {
+        score -= 15;
+      }
+
+      // Penalize prices in reviews or ratings
+      if (context.includes('review') || context.includes('rating') ||
+          context.includes('star') || context.includes('comment')) {
+        score -= 20;
+      }
+
+      // Penalize very high numbers (might be product codes)
+      if (item.value > 10000) {
+        score -= 5;
+      }
+
+      // Filter out obvious non-prices
+      const priceStr = item.price.replace(/[$,]/g, '');
+      if (/^\d{5,}$/.test(priceStr)) { // 5+ digits, likely not a price
+        score -= 30;
+      }
+      if (/^\d{1,2}\/\d{1,2}/.test(priceStr)) { // Looks like a date
+        score -= 30;
+      }
+
+      item.score = score;
     }
 
-    return price || 'Price not found';
+    // Sort by score (highest first), then by value (lowest first for same score)
+    allPrices.sort((a, b) => {
+      if (a.score !== b.score) {
+        return b.score - a.score;
+      }
+      return a.value - b.value; // Prefer lower price for same score
+    });
+
+    // Return the highest scoring price
+    if (allPrices.length > 0) {
+      const bestPrice = allPrices[0];
+      console.log(`Selected best price: ${bestPrice.price} (score: ${bestPrice.score})`);
+      console.log(`Price context: ${bestPrice.candidate.context.substring(0, 100)}...`);
+      return bestPrice.price;
+    }
+
+    return 'Price not found';
   }
 }
 

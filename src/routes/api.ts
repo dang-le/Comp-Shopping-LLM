@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import geminiService from '../services/gemini.service';
 import puppeteerService from '../services/puppeteer.service';
 
@@ -14,13 +16,26 @@ interface AnalyzeResponse {
   data?: {
     name?: string;
     price?: string;
-    options?: any[];
+    sku?: string;
     analysis?: string;
     pageUrl: string;
     prompt: string;
     timestamp: string;
   };
   error?: string;
+}
+
+// Helper function to save response to JSON file
+function saveResponseToFile(data: any, endpoint: string) {
+  const resultsDir = path.join(__dirname, '../../results');
+  if (!fs.existsSync(resultsDir)) {
+    fs.mkdirSync(resultsDir, { recursive: true });
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${endpoint}-${timestamp}.json`;
+  const filepath = path.join(resultsDir, filename);
+  fs.writeFileSync(filepath, JSON.stringify(data, null, 2));
+  console.log(`Response saved to ${filepath}`);
 }
 
 // Main endpoint: Analyze URL content with Gemini prompt
@@ -50,7 +65,7 @@ router.post('/analyze', async (req: Request, res: Response<AnalyzeResponse>) => 
     console.log(`User prompt: ${prompt}`);
 
     // Use smart prompt-based control to interact with the page
-    const { name, price, options, content } = await puppeteerService.executePromptActions(url, prompt);
+    const { name, price, content } = await puppeteerService.executePromptActions(url, prompt);
 
     // Use Gemini for additional analysis if needed
     let analysis: string | undefined;
@@ -58,18 +73,22 @@ router.post('/analyze', async (req: Request, res: Response<AnalyzeResponse>) => 
       analysis = await geminiService.analyzePageContent(content, prompt);
     }
 
-    res.json({
+    const responseData = {
       success: true,
       data: {
         name,
         price,
-        options,
         analysis,
         pageUrl: url,
         prompt,
         timestamp: new Date().toISOString(),
       },
-    });
+    };
+
+    // Save response to file
+    saveResponseToFile(responseData, 'analyze');
+
+    res.json(responseData);
   } catch (error) {
     console.error('Error in /analyze endpoint:', error);
     res.status(500).json({
@@ -93,14 +112,19 @@ router.post('/generate', async (req: Request, res: Response) => {
 
     const result = await geminiService.generateContent(prompt, context);
 
-    res.json({
+    const responseData = {
       success: true,
       data: {
         result,
         prompt,
         timestamp: new Date().toISOString(),
       },
-    });
+    };
+
+    // Save response to file
+    saveResponseToFile(responseData, 'generate');
+
+    res.json(responseData);
   } catch (error) {
     console.error('Error in /generate endpoint:', error);
     res.status(500).json({
@@ -124,7 +148,7 @@ router.post('/extract', async (req: Request, res: Response) => {
 
     const data = await puppeteerService.extractData(url, selector);
 
-    res.json({
+    const responseData = {
       success: true,
       data: {
         url,
@@ -133,7 +157,12 @@ router.post('/extract', async (req: Request, res: Response) => {
         items: data,
         timestamp: new Date().toISOString(),
       },
-    });
+    };
+
+    // Save response to file
+    saveResponseToFile(responseData, 'extract');
+
+    res.json(responseData);
   } catch (error) {
     console.error('Error in /extract endpoint:', error);
     res.status(500).json({
