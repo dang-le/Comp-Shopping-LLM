@@ -1,0 +1,91 @@
+{
+  "info": {
+    "name": "ShopComp Backend API",
+    "description": "API Collection for testing ShopComp Backend endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Analyze Page",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"https://example.com\",\n  \"prompt\": \"What is the main purpose of this website? Provide a brief summary.\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/analyze",
+          "host": ["{{base_url}}"],
+          "path": ["api", "analyze"]
+        }
+      }
+    },
+    {
+      "name": "Generate Content",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"prompt\": \"Write a catchy product description for wireless headphones\",\n  \"context\": \"Features: Active noise cancellation, 30-hour battery life, Bluetooth 5.0, premium sound quality\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/generate",
+          "host": ["{{base_url}}"],
+          "path": ["api", "generate"]
+        }
+      }
+    },
+    {
+      "name": "Extract Data",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"https://example.com\",\n  \"selector\": \"a\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/extract",
+          "host": ["{{base_url}}"],
+          "path": ["api", "extract"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    }
+  ]
+}
