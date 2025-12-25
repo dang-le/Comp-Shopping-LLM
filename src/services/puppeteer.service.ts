@@ -618,6 +618,74 @@ class PuppeteerService {
 
     return 'Price not found';
   }
+
+  private async extractSKU(page: Page): Promise<string> {
+    let sku = '';
+
+    const skuSelectors = [
+      '[itemprop="sku"]',
+      '.sku',
+      '.product-sku',
+      '.product-code',
+      '.item-number',
+      '.model-number',
+      '.product-id',
+      '[data-sku]',
+      // Common patterns
+      '[class*="sku"]',
+      '[id*="sku"]',
+    ];
+
+    for (const sel of skuSelectors) {
+      try {
+        const result = await page.evaluate((selector: string) => {
+          const el = (globalThis as any).document.querySelector(selector);
+          if (!el) return '';
+          const dataSku = el.getAttribute?.('data-sku') || el.getAttribute?.('content');
+          if (dataSku) return dataSku;
+          return el?.textContent?.trim() || '';
+        }, sel);
+        if (result && result.length > 2 && result.length < 50) {
+          // Clean up common prefixes and extra characters
+          let cleanSku = result.replace(/^[|•\s]*(SKU|Model|Item|Product|Code|#:)[\s:]+/i, '');
+          cleanSku = cleanSku.replace(/^[|•\s]+/, '').replace(/[|•\s]+$/, '');
+          cleanSku = cleanSku.replace(/\s+/g, ' ').trim();
+          sku = cleanSku.substring(0, 50);
+          console.log(`Found SKU via selector: ${sku}`);
+          return sku;
+        }
+      } catch (e) {
+        // Continue
+      }
+    }
+
+    // Fallback: search in text for SKU patterns
+    if (!sku) {
+      const allText = await page.evaluate(() => {
+        return (globalThis as any).document?.body?.innerText || '';
+      });
+
+      // Look for patterns like "SKU: LNT-GNA3001-SO" or "Model: ABC123"
+      const skuPatterns = [
+        /SKU[\s:]+([A-Z0-9\-_]{3,})/i,
+        /Model[\s:]+([A-Z0-9\-_]{3,})/i,
+        /Item[\s:]+([A-Z0-9\-_]{3,})/i,
+        /Product[\s:]+([A-Z0-9\-_]{3,})/i,
+        /Code[\s:]+([A-Z0-9\-_]{3,})/i,
+      ];
+
+      for (const pattern of skuPatterns) {
+        const match = allText.match(pattern);
+        if (match && match[1]) {
+          sku = match[1];
+          console.log(`Found SKU in text: ${sku}`);
+          break;
+        }
+      }
+    }
+
+    return sku || 'SKU not found';
+  }
 }
 
 export default new PuppeteerService();
