@@ -168,4 +168,61 @@ router.post('/extract', async (req: Request, res: Response) => {
   }
 });
 
+
+// Main endpoint: Analyze URL content with Gemini prompt
+router.post('/ai', async (req: Request, res: Response<AnalyzeResponse>) => {
+  try {
+    const { url, prompt } = req.body as AnalyzeRequest;
+
+    // Validate input
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        error: 'URL are required',
+      });
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid URL format',
+      });
+    }
+    var prompts = prompt + " " + url;
+    // Use smart prompt-based control to interact with the page
+    const { name, price, sku, content } = await puppeteerService.executePromptActions(url, "");
+
+    // Use Gemini for additional analysis if needed
+    let analysis: string | undefined;
+    analysis = await geminiService.generateContent(prompts);
+
+    const responseData = {
+      success: true,
+      data: {
+        name,
+        price,
+        sku,
+        analysis,
+        pageUrl: url,
+        prompt : prompts,
+        timestamp: new Date().toISOString(),
+      },
+    };
+
+    // Save response to file
+    saveResponseToFile(responseData, 'analyze');
+
+    res.json(responseData);
+  } catch (error) {
+    console.error('Error in /analyze endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    });
+  }
+});
+
 export default router;
