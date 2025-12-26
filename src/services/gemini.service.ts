@@ -27,11 +27,18 @@ class GeminiService {
     }
 
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta2/models/${this.model}:generateText?key=${this.apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+
       const body = {
-        prompt: {
-          text: fullPrompt,
-        },
+        contents: [
+          {
+            parts: [
+              {
+                text: fullPrompt,
+              },
+            ],
+          },
+        ],
       };
 
       const resp = await axios.post(url, body, {
@@ -39,16 +46,23 @@ class GeminiService {
         timeout: 30000,
       });
 
-      // Try to read common response shapes
+      // Parse response
       const data: any = resp.data;
+      
       if (data?.candidates && data.candidates.length > 0) {
-        return data.candidates[0].output || data.candidates[0].content || JSON.stringify(data.candidates[0]);
+        const candidate = data.candidates[0];
+        if (candidate.content?.parts && candidate.content.parts.length > 0) {
+          const text = candidate.content.parts[0].text;
+          return text || JSON.stringify(candidate.content.parts[0]);
+        }
+        return JSON.stringify(candidate);
       }
       if (data?.output) return data.output;
       if (typeof data === 'string') return data;
 
       return JSON.stringify(data);
     } catch (error: any) {
+      console.error('Gemini API Error Details:', error.response?.data || error.message);
       throw new Error(`Gemini API error: ${error?.message || String(error)}`);
     }
   }

@@ -120,7 +120,7 @@ class PuppeteerService {
     }
   }
 
-  async executePromptActions(url: string, prompt: string): Promise<{ name: string; price: string; options: any[]; content: string }> {
+  async executePromptActions(url: string, prompt: string): Promise<{ name: string; price: string; sku: string; options: any[]; content: string }> {
     await this.initBrowser();
 
     if (!this.browser) {
@@ -183,6 +183,9 @@ class PuppeteerService {
       // Extract price after all actions
       const price = await this.extractPrice(page);
 
+      // Extract SKU
+      const sku = await this.extractSKU(page);
+
       // Get final page content
       const content = await page.evaluate(() => {
         return (globalThis as any).document?.body?.innerText || '';
@@ -191,6 +194,7 @@ class PuppeteerService {
       return {
         name: name || 'Product name not found',
         price,
+        sku,
         options,
         content,
       };

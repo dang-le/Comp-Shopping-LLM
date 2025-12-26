@@ -61,23 +61,19 @@ router.post('/analyze', async (req: Request, res: Response<AnalyzeResponse>) => 
       });
     }
 
-    console.log(`Processing request for URL: ${url}`);
-    console.log(`User prompt: ${prompt}`);
-
     // Use smart prompt-based control to interact with the page
-    const { name, price, content } = await puppeteerService.executePromptActions(url, prompt);
+    const { name, price, sku, content } = await puppeteerService.executePromptActions(url, prompt);
 
     // Use Gemini for additional analysis if needed
     let analysis: string | undefined;
-    if (prompt.toLowerCase().includes('analysis') || prompt.toLowerCase().includes('analyze')) {
-      analysis = await geminiService.analyzePageContent(content, prompt);
-    }
+    analysis = await geminiService.analyzePageContent(content, prompt);
 
     const responseData = {
       success: true,
       data: {
         name,
         price,
+        sku,
         analysis,
         pageUrl: url,
         prompt,

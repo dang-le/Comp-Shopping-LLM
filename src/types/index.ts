@@ -16,7 +16,10 @@ export interface AnalyzeRequest {
 export interface AnalyzeResponse {
   success: boolean;
   data?: {
-    analysis: string;
+    name?: string;
+    price?: string;
+    sku?: string;
+    analysis?: string;
     pageUrl: string;
     prompt: string;
     timestamp: string;
